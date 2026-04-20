@@ -1,0 +1,1445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SENTINEL — AI Missing Person Detection</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=IBM+Plex+Mono:wght@300;400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<style>
+:root {
+  --amber:#f59e0b; --amber-dim:rgba(245,158,11,.15); --amber-glow:rgba(245,158,11,.4);
+  --teal:#06b6d4; --teal-dim:rgba(6,182,212,.12);
+  --red:#ef4444; --green:#22c55e; --blue:#3b82f6;
+  --bg:#030712; --bg2:#0a0f1e;
+  --panel:rgba(255,255,255,.03); --panel-border:rgba(245,158,11,.18);
+  --text:#e2e8f0; --text-dim:#64748b;
+  --sidebar-w:260px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:'IBM Plex Sans',sans-serif;background:var(--bg);color:var(--text);overflow-x:hidden}
+body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.03) 2px,rgba(0,0,0,.03) 4px);pointer-events:none;z-index:9999}
+
+/* ── PARTICLES ── */
+#bgCanvas{position:fixed;inset:0;z-index:0}
+
+/* ─────────────────────────── LANDING PAGE ─────────────────────────── */
+#page-landing{position:relative;z-index:10;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 20px}
+.landing-logo{text-align:center;margin-bottom:60px}
+.landing-logo-text{font-family:'Orbitron',monospace;font-size:42px;font-weight:900;letter-spacing:8px;color:var(--amber);text-shadow:0 0 40px var(--amber-glow);animation:glow-pulse 3s ease-in-out infinite}
+.landing-logo-sub{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:3px;color:var(--text-dim);margin-top:6px}
+.landing-logo-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);border-radius:20px;padding:4px 14px;font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--green);margin-top:12px}
+.landing-logo-badge::before{content:'';width:6px;height:6px;background:var(--green);border-radius:50%;animation:pulse-g 2s infinite}
+@keyframes pulse-g{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(34,197,94,.4)}50%{opacity:.7;box-shadow:0 0 0 5px rgba(34,197,94,0)}}
+@keyframes glow-pulse{0%,100%{text-shadow:0 0 40px var(--amber-glow)}50%{text-shadow:0 0 80px var(--amber-glow),0 0 120px rgba(245,158,11,.2)}}
+
+.portal-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;width:100%;max-width:880px}
+.portal-card{border-radius:20px;padding:40px 36px;cursor:pointer;border:1px solid var(--panel-border);background:rgba(10,15,30,.8);backdrop-filter:blur(20px);transition:all .3s;position:relative;overflow:hidden}
+.portal-card::before{content:'';position:absolute;inset:0;opacity:0;transition:opacity .3s;border-radius:20px}
+.portal-card:hover::before{opacity:1}
+.portal-card.public::before{background:radial-gradient(circle at 30% 50%, rgba(245,158,11,.08) 0%, transparent 70%)}
+.portal-card.police::before{background:radial-gradient(circle at 70% 50%, rgba(6,182,212,.08) 0%, transparent 70%)}
+.portal-card:hover{transform:translateY(-6px);border-color:rgba(245,158,11,.4);box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.portal-card.police:hover{border-color:rgba(6,182,212,.4);box-shadow:0 20px 60px rgba(6,182,212,.1)}
+.portal-icon{font-size:52px;margin-bottom:20px;display:block}
+.portal-title{font-family:'Orbitron',monospace;font-size:20px;font-weight:700;margin-bottom:8px;color:var(--amber)}
+.portal-card.police .portal-title{color:var(--teal)}
+.portal-desc{font-size:14px;color:var(--text-dim);line-height:1.7;margin-bottom:24px}
+.portal-features{display:flex;flex-direction:column;gap:8px;margin-bottom:28px}
+.portal-feature{display:flex;align-items:center;gap:10px;font-size:13px;color:#94a3b8}
+.portal-feature span{font-size:14px}
+.portal-btn{display:flex;align-items:center;justify-content:center;gap:8px;padding:13px 28px;border-radius:10px;border:none;font-family:'Orbitron',monospace;font-size:12px;font-weight:700;letter-spacing:1px;cursor:pointer;width:100%;transition:all .2s}
+.portal-btn.amber{background:linear-gradient(135deg,var(--amber),#d97706);color:#000;box-shadow:0 4px 20px rgba(245,158,11,.3)}
+.portal-btn.amber:hover{box-shadow:0 8px 30px rgba(245,158,11,.5);transform:translateY(-2px)}
+.portal-btn.teal{background:linear-gradient(135deg,var(--teal),#0284c7);color:#000;box-shadow:0 4px 20px rgba(6,182,212,.3)}
+.portal-btn.teal:hover{box-shadow:0 8px 30px rgba(6,182,212,.5);transform:translateY(-2px)}
+.portal-corner-tag{position:absolute;top:16px;right:16px;font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:1.5px;color:var(--text-dim);background:var(--panel);border:1px solid var(--panel-border);padding:3px 10px;border-radius:4px}
+@media(max-width:700px){.portal-grid{grid-template-columns:1fr}.landing-logo-text{font-size:28px}}
+
+/* ─────────────────────────── PUBLIC REPORT ─────────────────────────── */
+#page-public-report{position:relative;z-index:10;min-height:100vh;display:none;flex-direction:column;align-items:center;padding:32px 20px}
+.report-header{width:100%;max-width:760px;display:flex;align-items:center;justify-content:space-between;margin-bottom:32px}
+.report-back{background:none;border:1px solid var(--panel-border);border-radius:8px;padding:8px 16px;color:var(--text-dim);font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all .2s;font-family:'IBM Plex Sans',sans-serif}
+.report-back:hover{color:var(--amber);border-color:var(--amber)}
+.report-logo{font-family:'Orbitron',monospace;font-size:18px;font-weight:700;letter-spacing:4px;color:var(--amber)}
+.report-wrapper{width:100%;max-width:760px}
+/* Step indicator */
+.steps-bar{display:flex;align-items:center;margin-bottom:36px}
+.step-item{display:flex;align-items:center;gap:8px;flex:1}
+.step-item:last-child{flex:none}
+.step-circle{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Orbitron',monospace;font-size:11px;font-weight:700;border:2px solid var(--panel-border);color:var(--text-dim);background:var(--bg2);flex-shrink:0;transition:all .3s}
+.step-circle.active{border-color:var(--amber);color:var(--amber);background:var(--amber-dim);box-shadow:0 0 12px rgba(245,158,11,.3)}
+.step-circle.done{border-color:var(--green);color:#000;background:var(--green)}
+.step-label{font-size:11px;font-family:'IBM Plex Mono',monospace;color:var(--text-dim);letter-spacing:.5px;white-space:nowrap}
+.step-label.active{color:var(--amber)}
+.step-label.done{color:var(--green)}
+.step-line{flex:1;height:1px;background:var(--panel-border);margin:0 10px;transition:background .3s}
+.step-line.done{background:var(--green)}
+
+/* Report panels */
+.report-step{display:none}
+.report-step.active{display:block;animation:fadeUp .3s ease forwards}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.report-panel{background:rgba(10,15,30,.8);border:1px solid var(--panel-border);border-radius:16px;padding:32px;backdrop-filter:blur(20px);margin-bottom:16px}
+.report-panel-title{font-family:'Orbitron',monospace;font-size:16px;font-weight:700;margin-bottom:6px}
+.report-panel-sub{font-size:13px;color:var(--text-dim);margin-bottom:28px}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.form-row.single{grid-template-columns:1fr}
+.form-row.three{grid-template-columns:1fr 1fr 1fr}
+.fgroup{display:flex;flex-direction:column;gap:6px}
+.flabel{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:1.5px;color:var(--text-dim);text-transform:uppercase}
+.flabel .req{color:var(--red)}
+.finput{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:11px 14px;color:var(--text);font-family:'IBM Plex Sans',sans-serif;font-size:13.5px;outline:none;transition:border-color .2s,box-shadow .2s;width:100%}
+.finput:focus{border-color:var(--amber);box-shadow:0 0 0 3px rgba(245,158,11,.1)}
+.finput::placeholder{color:var(--text-dim)}
+textarea.finput{resize:vertical;min-height:90px}
+.fselect{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:11px 14px;color:var(--text);font-size:13.5px;outline:none;cursor:pointer;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%2364748b' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;padding-right:36px;width:100%;transition:border-color .2s}
+.fselect:focus{border-color:var(--amber)}
+.fselect option{background:#0a0f1e;color:var(--text)}
+
+.upload-zone{border:2px dashed rgba(245,158,11,.25);border-radius:12px;padding:36px 20px;text-align:center;cursor:pointer;transition:all .2s;background:rgba(245,158,11,.02);position:relative}
+.upload-zone:hover,.upload-zone.dg{border-color:var(--amber);background:rgba(245,158,11,.06)}
+.upload-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.upload-preview{margin-top:14px;position:relative;display:none}
+.upload-preview img{width:100%;max-height:240px;object-fit:cover;border-radius:10px;border:1px solid var(--panel-border)}
+.upload-preview .ovl{position:absolute;inset:0;border-radius:10px;background:linear-gradient(to bottom,transparent 60%,rgba(3,7,18,.8));pointer-events:none}
+.upload-preview .ovl-lbl{position:absolute;bottom:8px;left:12px;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:1.5px;color:var(--amber)}
+.change-photo{background:none;border:1px solid var(--panel-border);border-radius:6px;padding:6px 14px;color:var(--text-dim);font-size:12px;cursor:pointer;margin-top:8px;transition:all .2s;font-family:'IBM Plex Sans',sans-serif}
+.change-photo:hover{color:var(--amber);border-color:var(--amber)}
+
+.step-actions{display:flex;justify-content:space-between;align-items:center;margin-top:20px}
+.btn-next{background:linear-gradient(135deg,var(--amber),#d97706);border:none;border-radius:8px;padding:12px 32px;color:#000;font-weight:700;font-size:13px;letter-spacing:1px;font-family:'Orbitron',monospace;cursor:pointer;transition:all .2s;display:inline-flex;align-items:center;gap:8px;box-shadow:0 4px 15px rgba(245,158,11,.25)}
+.btn-next:hover{transform:translateY(-2px);box-shadow:0 8px 25px rgba(245,158,11,.4)}
+.btn-next:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.btn-back-step{background:transparent;border:1px solid var(--panel-border);border-radius:8px;padding:11px 24px;color:var(--text);font-size:13px;cursor:pointer;transition:all .2s;font-family:'IBM Plex Sans',sans-serif}
+.btn-back-step:hover{border-color:var(--amber);color:var(--amber)}
+
+/* ── Confirmation ── */
+#page-confirm{position:relative;z-index:10;min-height:100vh;display:none;flex-direction:column;align-items:center;justify-content:center;padding:40px 20px;text-align:center}
+.confirm-card{background:rgba(10,15,30,.9);border:1px solid rgba(34,197,94,.3);border-radius:20px;padding:48px 40px;max-width:520px;width:100%;backdrop-filter:blur(20px);animation:fadeUp .5s ease forwards}
+.confirm-check{font-size:64px;margin-bottom:16px;animation:popIn .5s ease}
+@keyframes popIn{from{transform:scale(.5);opacity:0}to{transform:scale(1);opacity:1}}
+.confirm-title{font-family:'Orbitron',monospace;font-size:22px;font-weight:700;color:var(--green);margin-bottom:8px}
+.confirm-sub{font-size:14px;color:var(--text-dim);margin-bottom:24px;line-height:1.7}
+.case-number{font-family:'Orbitron',monospace;font-size:28px;font-weight:900;color:var(--amber);text-shadow:0 0 20px var(--amber-glow);margin-bottom:20px;letter-spacing:2px}
+.confirm-steps{text-align:left;background:rgba(255,255,255,.03);border:1px solid var(--panel-border);border-radius:12px;padding:20px;margin-bottom:24px}
+.confirm-step-item{display:flex;gap:12px;font-size:13px;padding:6px 0;color:var(--text-dim)}
+.confirm-step-item span{color:var(--green);flex-shrink:0}
+.btn-home{background:linear-gradient(135deg,var(--amber),#d97706);border:none;border-radius:8px;padding:12px 32px;color:#000;font-weight:700;font-size:13px;letter-spacing:1px;font-family:'Orbitron',monospace;cursor:pointer;transition:all .2s;width:100%}
+.btn-home:hover{transform:translateY(-2px);box-shadow:0 8px 25px rgba(245,158,11,.4)}
+
+/* ─────────────────────────── POLICE LOGIN ─────────────────────────── */
+#page-police-login{position:relative;z-index:10;min-height:100vh;display:none;flex-direction:column;align-items:center;justify-content:center;padding:40px 20px}
+.login-card{background:rgba(6,14,32,.95);border:1px solid rgba(6,182,212,.25);border-radius:20px;padding:48px 44px;width:100%;max-width:440px;backdrop-filter:blur(20px);position:relative;overflow:hidden;animation:fadeUp .4s ease forwards}
+.login-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--teal),transparent)}
+.login-logo{text-align:center;margin-bottom:32px}
+.login-logo-text{font-family:'Orbitron',monospace;font-size:26px;font-weight:900;letter-spacing:6px;color:var(--teal);text-shadow:0 0 20px rgba(6,182,212,.5)}
+.login-logo-sub{font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:2px;color:var(--text-dim);margin-top:4px}
+.login-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(6,182,212,.1);border:1px solid rgba(6,182,212,.3);border-radius:20px;padding:4px 12px;font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--teal);margin-top:10px}
+.login-badge::before{content:'🔒';font-size:10px}
+.login-divider{font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:2px;color:var(--text-dim);text-align:center;margin-bottom:20px;text-transform:uppercase}
+.login-input-wrap{position:relative;margin-bottom:14px}
+.login-input{background:rgba(255,255,255,.05);border:1px solid rgba(6,182,212,.2);border-radius:9px;padding:13px 16px 13px 44px;color:var(--text);font-family:'IBM Plex Sans',sans-serif;font-size:14px;outline:none;width:100%;transition:border-color .2s,box-shadow .2s}
+.login-input:focus{border-color:var(--teal);box-shadow:0 0 0 3px rgba(6,182,212,.1)}
+.login-input::placeholder{color:var(--text-dim)}
+.login-input-icon{position:absolute;left:14px;top:50%;transform:translateY(-50%);font-size:16px;color:var(--text-dim);pointer-events:none}
+.login-input-eye{position:absolute;right:14px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px;padding:2px}
+.login-btn{background:linear-gradient(135deg,var(--teal),#0284c7);border:none;border-radius:9px;padding:14px;color:#000;font-weight:700;font-size:13px;letter-spacing:1.5px;font-family:'Orbitron',monospace;cursor:pointer;width:100%;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 4px 20px rgba(6,182,212,.3);margin-top:6px}
+.login-btn:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(6,182,212,.5)}
+.login-hint{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text-dim);text-align:center;margin-top:16px;background:rgba(255,255,255,.03);border:1px solid var(--panel-border);border-radius:8px;padding:10px 14px;line-height:1.8}
+.login-hint strong{color:var(--teal)}
+.login-error{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:10px 14px;color:var(--red);font-size:12.5px;text-align:center;margin-bottom:14px;display:none;font-family:'IBM Plex Mono',monospace}
+.login-error.show{display:block}
+.login-back{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:13px;display:flex;align-items:center;gap:6px;margin:16px auto 0;transition:color .2s;font-family:'IBM Plex Sans',sans-serif}
+.login-back:hover{color:var(--teal)}
+
+/* ─────────────────────────── POLICE DASHBOARD ─────────────────────────── */
+#page-police-dash{display:none;position:relative;z-index:10;min-height:100vh}
+.sidebar{width:var(--sidebar-w);height:100vh;position:fixed;left:0;top:0;background:rgba(3,7,18,.96);border-right:1px solid var(--panel-border);display:flex;flex-direction:column;z-index:100;overflow:hidden}
+.sidebar-header{padding:26px 22px 18px;border-bottom:1px solid var(--panel-border)}
+.logo-mark{font-family:'Orbitron',monospace;font-size:20px;font-weight:900;letter-spacing:4px;color:var(--amber);text-shadow:0 0 20px var(--amber-glow)}
+.logo-sub{font-family:'IBM Plex Mono',monospace;font-size:8px;letter-spacing:2px;color:var(--text-dim);margin-top:3px}
+.status-pill{display:inline-flex;align-items:center;gap:6px;background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);border-radius:20px;padding:3px 10px;font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--green);margin-top:8px}
+.status-pill::before{content:'';width:6px;height:6px;background:var(--green);border-radius:50%;animation:pulse-g 2s infinite}
+.sidebar-nav{flex:1;padding:14px 10px;display:flex;flex-direction:column;gap:3px;overflow-y:auto}
+.nav-label{font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:2px;color:var(--text-dim);padding:8px 12px 4px;text-transform:uppercase}
+.nav-item{display:flex;align-items:center;gap:11px;padding:10px 13px;border-radius:8px;cursor:pointer;color:#94a3b8;font-size:13px;font-weight:500;border:1px solid transparent;transition:all .2s;user-select:none;position:relative;overflow:hidden}
+.nav-icon{font-size:15px;width:18px;text-align:center;flex-shrink:0}
+.nav-item:hover{color:var(--text);background:rgba(245,158,11,.06);border-color:rgba(245,158,11,.15)}
+.nav-item.active{color:var(--amber);background:var(--amber-dim);border-color:rgba(245,158,11,.35);font-weight:600}
+.nav-item.active::before{content:'';position:absolute;left:0;top:20%;height:60%;width:3px;background:var(--amber);border-radius:0 2px 2px 0;box-shadow:0 0 8px var(--amber)}
+.nav-badge{margin-left:auto;background:var(--amber);color:#000;font-size:10px;font-weight:700;padding:1px 7px;border-radius:10px;font-family:'IBM Plex Mono',monospace}
+.nav-badge.red{background:var(--red);color:#fff}
+.nav-badge.green{background:var(--green);color:#000}
+.sidebar-footer{padding:14px 10px;border-top:1px solid var(--panel-border)}
+.user-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;border:1px solid var(--panel-border);background:var(--panel)}
+.avatar{width:32px;height:32px;background:linear-gradient(135deg,var(--teal),#0284c7);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;color:#000;flex-shrink:0}
+.user-info{flex:1;min-width:0}
+.user-name{font-size:12px;font-weight:600;color:var(--text)}
+.user-role{font-size:10px;color:var(--text-dim);font-family:'IBM Plex Mono',monospace}
+.logout-btn{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px;padding:4px;border-radius:4px;transition:color .2s}
+.logout-btn:hover{color:var(--red)}
+
+.main{margin-left:var(--sidebar-w);padding:30px 34px;position:relative;z-index:10;min-height:100vh}
+.dsection{display:none;opacity:0;transform:translateY(10px);animation:none}
+.dsection.active{display:block;animation:fadeUp .35s ease forwards}
+.page-header{margin-bottom:26px;display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.page-title{font-family:'Orbitron',monospace;font-size:20px;font-weight:700;letter-spacing:1px}
+.page-title span{color:var(--amber)}
+.breadcrumb{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-dim);margin-top:4px;letter-spacing:1px}
+.timestamp{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-dim);background:var(--panel);border:1px solid var(--panel-border);padding:6px 14px;border-radius:6px}
+
+/* stat cards */
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(195px,1fr));gap:14px;margin-bottom:26px}
+.stat-card{background:var(--panel);border:1px solid var(--panel-border);border-radius:12px;padding:18px 20px;position:relative;overflow:hidden;transition:border-color .2s,box-shadow .2s;cursor:default}
+.stat-card:hover{border-color:rgba(245,158,11,.4);box-shadow:0 0 20px rgba(245,158,11,.08)}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--amber),transparent);opacity:.6}
+.stat-card.teal::before{background:linear-gradient(90deg,transparent,var(--teal),transparent)}
+.stat-card.green::before{background:linear-gradient(90deg,transparent,var(--green),transparent)}
+.stat-card.red::before{background:linear-gradient(90deg,transparent,var(--red),transparent)}
+.stat-card.blue::before{background:linear-gradient(90deg,transparent,var(--blue),transparent)}
+.stat-icon{font-size:20px;margin-bottom:10px}
+.stat-value{font-family:'Orbitron',monospace;font-size:30px;font-weight:700;color:var(--amber);line-height:1;margin-bottom:5px}
+.stat-card.teal .stat-value{color:var(--teal)}
+.stat-card.green .stat-value{color:var(--green)}
+.stat-card.red .stat-value{color:var(--red)}
+.stat-card.blue .stat-value{color:var(--blue)}
+.stat-label{font-size:11px;color:var(--text-dim);letter-spacing:.5px;font-family:'IBM Plex Mono',monospace}
+.stat-delta{position:absolute;top:14px;right:14px;font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--green);background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.2);padding:2px 7px;border-radius:4px}
+
+/* panels */
+.panel{background:var(--panel);border:1px solid var(--panel-border);border-radius:14px;padding:22px;margin-bottom:18px}
+.panel-title{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:2px;color:var(--text-dim);text-transform:uppercase;margin-bottom:18px;display:flex;align-items:center;gap:8px}
+.panel-title::after{content:'';flex:1;height:1px;background:var(--panel-border)}
+
+/* forms inside dash */
+.dash-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin-bottom:13px}
+.dash-fgroup{display:flex;flex-direction:column;gap:5px}
+.dash-fgroup.full{grid-column:1/-1}
+.dash-flabel{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:1.5px;color:var(--text-dim);text-transform:uppercase}
+.dash-input{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px 13px;color:var(--text);font-family:'IBM Plex Sans',sans-serif;font-size:13.5px;outline:none;transition:border-color .2s,box-shadow .2s;width:100%}
+.dash-input:focus{border-color:var(--amber);box-shadow:0 0 0 3px rgba(245,158,11,.1)}
+.dash-input::placeholder{color:var(--text-dim)}
+textarea.dash-input{resize:vertical;min-height:80px}
+.dash-select{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px 13px;color:var(--text);font-size:13.5px;outline:none;cursor:pointer;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%2364748b' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 13px center;padding-right:34px;width:100%}
+.dash-select:focus{border-color:var(--amber)}
+.dash-select option{background:#0a0f1e;color:var(--text)}
+.dash-upload-zone{border:2px dashed rgba(245,158,11,.25);border-radius:10px;padding:26px;text-align:center;cursor:pointer;transition:all .2s;background:rgba(245,158,11,.02);position:relative}
+.dash-upload-zone:hover{border-color:var(--amber);background:rgba(245,158,11,.06)}
+.dash-upload-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.dash-preview-wrap{display:none;margin-top:10px;position:relative}
+.dash-preview-wrap.vis{display:block}
+.dash-preview-img{width:100%;max-height:180px;object-fit:cover;border-radius:8px;border:1px solid var(--panel-border)}
+
+/* buttons */
+.btn-p{background:linear-gradient(135deg,var(--amber),#d97706);border:none;border-radius:8px;padding:11px 26px;color:#000;font-weight:700;font-size:12px;letter-spacing:1px;font-family:'Orbitron',monospace;cursor:pointer;transition:all .2s;display:inline-flex;align-items:center;gap:8px;box-shadow:0 4px 15px rgba(245,158,11,.25)}
+.btn-p:hover{transform:translateY(-2px);box-shadow:0 8px 25px rgba(245,158,11,.4)}
+.btn-p.full{width:100%;justify-content:center}
+.btn-danger{background:linear-gradient(135deg,#ef4444,#dc2626);border:none;border-radius:8px;padding:11px 26px;color:#fff;font-weight:700;font-size:12px;letter-spacing:1px;font-family:'Orbitron',monospace;cursor:pointer;transition:all .2s;display:inline-flex;align-items:center;gap:8px;box-shadow:0 4px 15px rgba(239,68,68,.25)}
+.btn-danger:hover{transform:translateY(-2px);box-shadow:0 8px 25px rgba(239,68,68,.45)}
+.btn-danger.full{width:100%;justify-content:center}
+.btn-sec{background:transparent;border:1px solid var(--panel-border);border-radius:8px;padding:10px 22px;color:var(--text);font-size:13px;cursor:pointer;transition:all .2s;font-family:'IBM Plex Sans',sans-serif}
+.btn-sec:hover{border-color:var(--amber);color:var(--amber)}
+
+/* table */
+.data-table{width:100%;border-collapse:collapse;font-size:13px}
+.data-table thead th{padding:9px 13px;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-dim);border-bottom:1px solid var(--panel-border);text-align:left;white-space:nowrap}
+.data-table tbody tr{border-bottom:1px solid rgba(255,255,255,.04);transition:background .15s}
+.data-table tbody tr:hover{background:rgba(245,158,11,.04)}
+.data-table tbody td{padding:11px 13px;vertical-align:middle}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:600;font-family:'IBM Plex Mono',monospace;letter-spacing:.5px}
+.badge::before{content:'';width:5px;height:5px;border-radius:50%}
+.badge-missing{background:rgba(239,68,68,.12);color:var(--red);border:1px solid rgba(239,68,68,.3)}
+.badge-missing::before{background:var(--red);animation:pulse-r 1.5s infinite}
+@keyframes pulse-r{0%,100%{opacity:1}50%{opacity:.4}}
+.badge-found{background:rgba(34,197,94,.12);color:var(--green);border:1px solid rgba(34,197,94,.3)}
+.badge-found::before{background:var(--green)}
+.badge-investigating{background:rgba(245,158,11,.12);color:var(--amber);border:1px solid rgba(245,158,11,.3)}
+.badge-investigating::before{background:var(--amber);animation:pulse-g 1.5s infinite}
+.badge-new{background:rgba(59,130,246,.12);color:var(--blue);border:1px solid rgba(59,130,246,.3)}
+.badge-new::before{background:var(--blue);animation:pulse-r 1.5s infinite}
+.search-bar-wrap{display:flex;gap:10px;margin-bottom:14px}
+.search-input{flex:1;background:rgba(255,255,255,.04);border:1px solid var(--panel-border);border-radius:8px;padding:10px 16px 10px 38px;color:var(--text);font-size:13px;outline:none;font-family:'IBM Plex Sans',sans-serif;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.3-4.3'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:12px center;transition:border-color .2s}
+.search-input:focus{border-color:var(--amber)}
+.search-input::placeholder{color:var(--text-dim)}
+
+/* match result */
+.match-result{display:none;margin-top:20px;animation:fadeUp .3s ease}
+.match-result.vis{display:block}
+.match-confidence{font-family:'Orbitron',monospace;font-size:38px;font-weight:900;color:var(--green);text-shadow:0 0 20px rgba(34,197,94,.5)}
+.progress-bar-wrap{background:rgba(255,255,255,.06);border-radius:4px;height:6px;margin-top:8px;overflow:hidden}
+.progress-bar{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--green),#16a34a);transition:width 1s ease;width:0}
+.match-profile-box{display:flex;gap:14px;background:rgba(34,197,94,.05);border:1px solid rgba(34,197,94,.2);border-radius:12px;padding:14px;margin-top:12px}
+
+/* map */
+#map{height:480px;border-radius:12px;border:1px solid var(--panel-border);overflow:hidden}
+.leaflet-container{background:#0a0f1e!important}
+.map-filter-btn{background:var(--panel);border:1px solid var(--panel-border);border-radius:6px;padding:6px 13px;color:var(--text-dim);font-size:12px;cursor:pointer;transition:all .2s;font-family:'IBM Plex Mono',monospace;letter-spacing:.5px}
+.map-filter-btn.active,.map-filter-btn:hover{border-color:var(--amber);color:var(--amber);background:var(--amber-dim)}
+
+/* activity */
+.activity-item{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.activity-item:last-child{border-bottom:none}
+.activity-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.activity-text{font-size:13px;flex:1}
+.activity-time{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text-dim)}
+
+/* chart */
+.mini-chart{display:flex;align-items:flex-end;gap:4px;height:58px}
+.chart-bar{flex:1;background:var(--amber-dim);border:1px solid rgba(245,158,11,.2);border-radius:3px 3px 0 0;transition:background .2s;cursor:pointer}
+.chart-bar:hover{background:rgba(245,158,11,.3)}
+
+/* modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(8px);z-index:1000;display:none;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:#0c1120;border:1px solid var(--panel-border);border-radius:16px;padding:26px;width:480px;max-width:90vw;animation:modalIn .25s ease}
+@keyframes modalIn{from{transform:scale(.95);opacity:0}to{transform:scale(1);opacity:1}}
+.modal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+.modal-title{font-family:'Orbitron',monospace;font-size:15px;font-weight:700}
+.modal-close{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:18px}
+.modal-close:hover{color:var(--red)}
+
+/* toast */
+.toast-container{position:fixed;top:20px;right:20px;z-index:9998;display:flex;flex-direction:column;gap:10px}
+.toast{background:rgba(10,15,30,.95);border:1px solid var(--panel-border);border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:12px;min-width:280px;box-shadow:0 4px 20px rgba(0,0,0,.5);animation:slideIn .3s ease;backdrop-filter:blur(20px)}
+.toast.success{border-color:rgba(34,197,94,.4)}
+.toast.error{border-color:rgba(239,68,68,.4)}
+.toast.info{border-color:rgba(245,158,11,.4)}
+@keyframes slideIn{from{transform:translateX(20px);opacity:0}to{transform:translateX(0);opacity:1}}
+.toast-icon{font-size:18px}
+.toast-msg{font-size:13px;flex:1}
+.toast-close{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px}
+
+/* spinner */
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(0,0,0,.3);border-top-color:#000;border-radius:50%;animation:spin .6s linear infinite}
+.spinner.white{border-color:rgba(255,255,255,.2);border-top-color:#fff}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* anim bars */
+.anim-bar{height:100%;border-radius:3px;transition:width 1s ease;width:0}
+
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(245,158,11,.25);border-radius:4px}
+::-webkit-scrollbar-thumb:hover{background:rgba(245,158,11,.5)}
+
+@media(max-width:700px){.main{margin-left:0}.sidebar{display:none}.dash-form-grid{grid-template-columns:1fr}.form-row{grid-template-columns:1fr}.form-row.three{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<canvas id="bgCanvas"></canvas>
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- ════════════════════════ LANDING PAGE ════════════════════════ -->
+<div id="page-landing">
+  <div class="landing-logo">
+    <div class="landing-logo-text">SENTINEL</div>
+    <div class="landing-logo-sub">AI MISSING PERSON DETECTION SYSTEM · TAMIL NADU POLICE</div>
+    <div class="landing-logo-badge">SYSTEM ONLINE — v3.1</div>
+  </div>
+
+  <div class="portal-grid">
+    <!-- PUBLIC -->
+    <div class="portal-card public" onclick="goPublicReport()">
+      <div class="portal-corner-tag">PUBLIC ACCESS</div>
+      <span class="portal-icon">🆘</span>
+      <div class="portal-title">Report Missing Person</div>
+      <div class="portal-desc">File an official missing person report directly from this portal. No login required. Your report is immediately forwarded to the nearest police station.</div>
+      <div class="portal-features">
+        <div class="portal-feature"><span>📋</span> Step-by-step guided form</div>
+        <div class="portal-feature"><span>📷</span> Upload recent photos</div>
+        <div class="portal-feature"><span>📍</span> Last known location tagging</div>
+        <div class="portal-feature"><span>✅</span> Instant case reference number</div>
+        <div class="portal-feature"><span>📱</span> SMS & email notification</div>
+      </div>
+      <button class="portal-btn amber">FILE A REPORT →</button>
+    </div>
+
+    <!-- POLICE -->
+    <div class="portal-card police" onclick="goPoliceLogin()">
+      <div class="portal-corner-tag">RESTRICTED</div>
+      <span class="portal-icon">🚨</span>
+      <div class="portal-title" style="color:var(--teal)">Police Command Portal</div>
+      <div class="portal-desc">Secure law enforcement dashboard for managing cases, running AI face recognition, tracking locations, and reviewing incoming public reports.</div>
+      <div class="portal-features">
+        <div class="portal-feature"><span>◎</span> AI face match engine (98.4%)</div>
+        <div class="portal-feature"><span>🗺️</span> Real-time geospatial tracking</div>
+        <div class="portal-feature"><span>⚡</span> Manage all public reports</div>
+        <div class="portal-feature"><span>🔔</span> Live CCTV alert feed</div>
+        <div class="portal-feature"><span>📊</span> Analytics dashboard</div>
+      </div>
+      <button class="portal-btn teal">OFFICER LOGIN →</button>
+    </div>
+  </div>
+
+  <div style="margin-top:32px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text-dim);text-align:center;letter-spacing:1px">
+    NATIONAL EMERGENCY: 112 &nbsp;·&nbsp; WOMEN HELPLINE: 1091 &nbsp;·&nbsp; CHILD HELPLINE: 1098 &nbsp;·&nbsp; SENIOR CITIZEN: 14567
+  </div>
+</div>
+
+<!-- ════════════════════════ PUBLIC REPORT ════════════════════════ -->
+<div id="page-public-report">
+  <div class="report-header">
+    <button class="report-back" onclick="goLanding()">← Back to Home</button>
+    <div class="report-logo">SENTINEL</div>
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text-dim)">PUBLIC PORTAL</div>
+  </div>
+
+  <div class="report-wrapper">
+    <div style="margin-bottom:28px">
+      <div style="font-family:'Orbitron',monospace;font-size:22px;font-weight:700;margin-bottom:6px">File a <span style="color:var(--amber)">Missing Person Report</span></div>
+      <div style="font-size:13.5px;color:var(--text-dim)">Your report will be reviewed immediately and forwarded to local law enforcement. Please fill in as much detail as possible.</div>
+    </div>
+
+    <!-- STEP BAR -->
+    <div class="steps-bar" id="stepsBar">
+      <div class="step-item">
+        <div class="step-circle active" id="sc1">01</div>
+        <div class="step-label active" id="sl1">VICTIM INFO</div>
+      </div>
+      <div class="step-line" id="sline1"></div>
+      <div class="step-item">
+        <div class="step-circle" id="sc2">02</div>
+        <div class="step-label" id="sl2">DESCRIPTION</div>
+      </div>
+      <div class="step-line" id="sline2"></div>
+      <div class="step-item">
+        <div class="step-circle" id="sc3">03</div>
+        <div class="step-label" id="sl3">PHOTO</div>
+      </div>
+      <div class="step-line" id="sline3"></div>
+      <div class="step-item">
+        <div class="step-circle" id="sc4">04</div>
+        <div class="step-label" id="sl4">CONTACT</div>
+      </div>
+      <div class="step-line" id="sline4"></div>
+      <div class="step-item">
+        <div class="step-circle" id="sc5">05</div>
+        <div class="step-label" id="sl5">REVIEW</div>
+      </div>
+    </div>
+
+    <!-- STEP 1: Victim Info -->
+    <div class="report-step active" id="rstep1">
+      <div class="report-panel">
+        <div class="report-panel-title">Missing Person Details</div>
+        <div class="report-panel-sub">Provide accurate personal details of the missing individual.</div>
+        <div class="form-row">
+          <div class="fgroup"><label class="flabel">First Name <span class="req">*</span></label><input class="finput" id="r-fname" placeholder="e.g. Rajesh"></div>
+          <div class="fgroup"><label class="flabel">Last Name <span class="req">*</span></label><input class="finput" id="r-lname" placeholder="e.g. Kumar"></div>
+        </div>
+        <div class="form-row three">
+          <div class="fgroup"><label class="flabel">Age <span class="req">*</span></label><input class="finput" id="r-age" type="number" placeholder="25" min="1" max="120"></div>
+          <div class="fgroup"><label class="flabel">Gender <span class="req">*</span></label>
+            <select class="fselect" id="r-gender"><option value="">Select</option><option>Male</option><option>Female</option><option>Other</option></select>
+          </div>
+          <div class="fgroup"><label class="flabel">Blood Group</label>
+            <select class="fselect" id="r-blood"><option value="">Unknown</option><option>A+</option><option>A-</option><option>B+</option><option>B-</option><option>AB+</option><option>AB-</option><option>O+</option><option>O-</option></select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="fgroup"><label class="flabel">Date of Birth</label><input class="finput" id="r-dob" type="date"></div>
+          <div class="fgroup"><label class="flabel">Aadhaar (last 4 digits)</label><input class="finput" id="r-aadhaar" placeholder="XXXX" maxlength="4"></div>
+        </div>
+        <div class="form-row single">
+          <div class="fgroup"><label class="flabel">Last Known Location <span class="req">*</span></label><input class="finput" id="r-location" placeholder="e.g. T. Nagar Bus Stop, Chennai"></div>
+        </div>
+        <div class="form-row">
+          <div class="fgroup"><label class="flabel">Date Last Seen <span class="req">*</span></label><input class="finput" id="r-lastseen" type="date"></div>
+          <div class="fgroup"><label class="flabel">Time Last Seen</label><input class="finput" id="r-lasttime" type="time"></div>
+        </div>
+      </div>
+      <div class="step-actions">
+        <div></div>
+        <button class="btn-next" onclick="nextStep(1)">Next: Description →</button>
+      </div>
+    </div>
+
+    <!-- STEP 2: Description -->
+    <div class="report-step" id="rstep2">
+      <div class="report-panel">
+        <div class="report-panel-title">Physical Description</div>
+        <div class="report-panel-sub">Provide any identifying features that could help locate the individual.</div>
+        <div class="form-row">
+          <div class="fgroup"><label class="flabel">Height (cm)</label><input class="finput" id="r-height" placeholder="e.g. 165"></div>
+          <div class="fgroup"><label class="flabel">Weight (kg)</label><input class="finput" id="r-weight" placeholder="e.g. 60"></div>
+        </div>
+        <div class="form-row">
+          <div class="fgroup"><label class="flabel">Complexion</label>
+            <select class="fselect" id="r-complexion"><option value="">Select</option><option>Fair</option><option>Wheatish</option><option>Dark</option></select>
+          </div>
+          <div class="fgroup"><label class="flabel">Hair</label><input class="finput" id="r-hair" placeholder="e.g. Short black hair"></div>
+        </div>
+        <div class="form-row single">
+          <div class="fgroup"><label class="flabel">Clothing When Last Seen</label><input class="finput" id="r-clothing" placeholder="e.g. Blue jeans, white shirt, black sandals"></div>
+        </div>
+        <div class="form-row single">
+          <div class="fgroup"><label class="flabel">Identifying Marks / Scars / Tattoos</label><input class="finput" id="r-marks" placeholder="e.g. Birthmark on left cheek, scar on right hand"></div>
+        </div>
+        <div class="form-row single">
+          <div class="fgroup"><label class="flabel">Additional Circumstances</label><textarea class="finput" id="r-circumstances" placeholder="Describe the circumstances under which the person went missing. Any relevant details, people they were with, mental health conditions, etc."></textarea></div>
+        </div>
+      </div>
+      <div class="step-actions">
+        <button class="btn-back-step" onclick="prevStep(2)">← Back</button>
+        <button class="btn-next" onclick="nextStep(2)">Next: Upload Photo →</button>
+      </div>
+    </div>
+
+    <!-- STEP 3: Photo -->
+    <div class="report-step" id="rstep3">
+      <div class="report-panel">
+        <div class="report-panel-title">Photo Upload</div>
+        <div class="report-panel-sub">Upload the most recent clear photograph of the missing person. This is critical for AI face recognition.</div>
+        <div class="upload-zone" id="pub-upload-zone" ondragover="this.classList.add('dg')" ondragleave="this.classList.remove('dg')" ondrop="this.classList.remove('dg')">
+          <input type="file" accept="image/*" onchange="pubPreview(event)">
+          <div style="font-size:48px;margin-bottom:10px">📷</div>
+          <div style="font-size:15px;font-weight:600;margin-bottom:6px">Drag & drop or <span style="color:var(--amber)">browse</span></div>
+          <div style="font-size:12px;color:var(--text-dim)">JPG, PNG, WEBP accepted · Max 10MB · Front-facing photo preferred</div>
+        </div>
+        <div class="upload-preview" id="pub-preview-wrap">
+          <img id="pub-preview-img" src="" alt="preview">
+          <div class="ovl"></div>
+          <div class="ovl-lbl">◈ FACE DETECTED — IMAGE READY</div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:10px;align-items:center" id="pub-photo-actions" style="display:none">
+          <button class="change-photo" onclick="resetPubPhoto()">↺ Change Photo</button>
+          <span style="font-size:12px;color:var(--text-dim);font-family:'IBM Plex Mono',monospace" id="pub-filename"></span>
+        </div>
+        <div style="margin-top:20px;background:rgba(245,158,11,.05);border:1px solid rgba(245,158,11,.2);border-radius:10px;padding:14px">
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:1.5px;color:var(--amber);margin-bottom:10px">PHOTO GUIDELINES</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12.5px;color:var(--text-dim)">
+            <div>✅ Clear frontal face</div><div>✅ Well lit</div>
+            <div>✅ Recent photo</div><div>✅ No masks / sunglasses</div>
+            <div>❌ Group photos</div><div>❌ Heavy filters</div>
+          </div>
+        </div>
+      </div>
+      <div class="step-actions">
+        <button class="btn-back-step" onclick="prevStep(3)">← Back</button>
+        <button class="btn-next" onclick="nextStep(3)" id="nextPhotoBtn">Next: Contact Details →</button>
+      </div>
+    </div>
+
+    <!-- STEP 4: Contact -->
+    <div class="report-step" id="rstep4">
+      <div class="report-panel">
+        <div class="report-panel-title">Reporter & Contact Details</div>
+        <div class="report-panel-sub">Your information is kept confidential and used only for case communication.</div>
+        <div class="form-row">
+          <div class="fgroup"><label class="flabel">Your Full Name <span class="req">*</span></label><input class="finput" id="r-rname" placeholder="Your name"></div>
+          <div class="fgroup"><label class="flabel">Relationship to Missing Person <span class="req">*</span></label>
+            <select class="fselect" id="r-relation"><option value="">Select</option><option>Parent</option><option>Sibling</option><option>Spouse</option><option>Child</option><option>Relative</option><option>Friend</option><option>Neighbour</option><option>Other</option></select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="fgroup"><label class="flabel">Mobile Number <span class="req">*</span></label><input class="finput" id="r-mobile" type="tel" placeholder="+91 98765 43210"></div>
+          <div class="fgroup"><label class="flabel">Alternate Number</label><input class="finput" id="r-altmobile" type="tel" placeholder="+91 XXXXX XXXXX"></div>
+        </div>
+        <div class="form-row single">
+          <div class="fgroup"><label class="flabel">Email Address</label><input class="finput" id="r-email" type="email" placeholder="your@email.com"></div>
+        </div>
+        <div class="form-row single">
+          <div class="fgroup"><label class="flabel">Home Address</label><textarea class="finput" id="r-address" rows="2" placeholder="Full residential address"></textarea></div>
+        </div>
+        <div class="form-row single">
+          <div class="fgroup"><label class="flabel">Nearest Police Station</label><input class="finput" id="r-station" placeholder="e.g. T. Nagar Police Station"></div>
+        </div>
+      </div>
+      <div class="step-actions">
+        <button class="btn-back-step" onclick="prevStep(4)">← Back</button>
+        <button class="btn-next" onclick="nextStep(4)">Review Report →</button>
+      </div>
+    </div>
+
+    <!-- STEP 5: Review -->
+    <div class="report-step" id="rstep5">
+      <div class="report-panel">
+        <div class="report-panel-title">Review Your Report</div>
+        <div class="report-panel-sub">Please review all details before submitting. Once submitted, a case officer will contact you within 1 hour.</div>
+        <div id="reviewContent" style="display:grid;grid-template-columns:1fr 1fr;gap:14px"></div>
+      </div>
+      <div class="report-panel" style="background:rgba(245,158,11,.04);border-color:rgba(245,158,11,.25)">
+        <div style="display:flex;gap:12px;align-items:flex-start">
+          <div style="font-size:22px">⚠️</div>
+          <div>
+            <div style="font-weight:600;margin-bottom:4px">Declaration</div>
+            <div style="font-size:12.5px;color:var(--text-dim);line-height:1.7">I hereby declare that the information provided is true and accurate to the best of my knowledge. I understand that filing a false report is a punishable offence under Section 182 IPC.</div>
+            <label style="display:flex;align-items:center;gap:10px;margin-top:12px;cursor:pointer">
+              <input type="checkbox" id="r-declare" style="width:16px;height:16px;accent-color:var(--amber)">
+              <span style="font-size:13px">I agree to the declaration above</span>
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="step-actions">
+        <button class="btn-back-step" onclick="prevStep(5)">← Back</button>
+        <button class="btn-next" id="submitReportBtn" onclick="submitReport()">🚨 SUBMIT REPORT</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════ CONFIRMATION ════════════════════════ -->
+<div id="page-confirm">
+  <div class="confirm-card">
+    <div class="confirm-check">✅</div>
+    <div class="confirm-title">Report Successfully Filed</div>
+    <div class="confirm-sub">Your missing person report has been received and is being reviewed by a case officer. Keep your case reference number safe.</div>
+    <div class="case-number" id="caseNumDisplay">CASE-XXXX</div>
+    <div class="confirm-steps">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:1.5px;color:var(--amber);margin-bottom:10px">WHAT HAPPENS NEXT</div>
+      <div class="confirm-step-item"><span>①</span> Case officer will call you within 1 hour</div>
+      <div class="confirm-step-item"><span>②</span> AI face recognition scan begins immediately</div>
+      <div class="confirm-step-item"><span>③</span> Nearest police station has been notified</div>
+      <div class="confirm-step-item"><span>④</span> Case number sent via SMS to your mobile</div>
+      <div class="confirm-step-item"><span>⑤</span> You can track status with your case number</div>
+    </div>
+    <div style="display:flex;gap:10px;margin-bottom:12px">
+      <button class="btn-home" onclick="goLanding()">← Return to Home</button>
+    </div>
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text-dim)">EMERGENCY: 112 · WOMEN: 1091 · CHILD: 1098</div>
+  </div>
+</div>
+
+<!-- ════════════════════════ POLICE LOGIN ════════════════════════ -->
+<div id="page-police-login">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="login-logo-text">SENTINEL</div>
+      <div class="login-logo-sub">POLICE COMMAND PORTAL · RESTRICTED ACCESS</div>
+      <div class="login-badge">ENCRYPTED CONNECTION</div>
+    </div>
+    <div class="login-divider">Officer Authentication Required</div>
+    <div class="login-error" id="loginError">Invalid credentials. Please try again.</div>
+    <div class="login-input-wrap">
+      <span class="login-input-icon">👤</span>
+      <input class="login-input" id="loginUser" placeholder="Officer Username" autocomplete="off">
+    </div>
+    <div class="login-input-wrap">
+      <span class="login-input-icon">🔒</span>
+      <input class="login-input" id="loginPass" type="password" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()">
+      <button class="login-input-eye" onclick="togglePass()">👁</button>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12.5px;color:var(--text-dim)">
+        <input type="checkbox" style="accent-color:var(--teal)"> Remember me
+      </label>
+      <a href="#" style="font-size:12px;color:var(--teal);text-decoration:none" onclick="showToastG('Contact your admin to reset password','info','🔑')">Forgot password?</a>
+    </div>
+    <button class="login-btn" onclick="doLogin()" id="loginBtn">
+      <span id="loginBtnText">AUTHENTICATE →</span>
+    </button>
+    <div class="login-hint">
+      Demo credentials:<br>
+      <strong>officer</strong> / <strong>sentinel2026</strong> &nbsp;·&nbsp; <strong>admin</strong> / <strong>admin123</strong>
+    </div>
+    <button class="login-back" onclick="goLanding()">← Back to Home</button>
+  </div>
+</div>
+
+<!-- ════════════════════════ POLICE DASHBOARD ════════════════════════ -->
+<div id="page-police-dash">
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo-mark">SENTINEL</div>
+      <div class="logo-sub">COMMAND PORTAL</div>
+      <div class="status-pill">LIVE SYSTEM</div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-label">Command</div>
+      <div class="nav-item active" onclick="dShowSec('d-dashboard')" id="dnav-d-dashboard"><span class="nav-icon">⬡</span> Dashboard</div>
+      <div class="nav-item" onclick="dShowSec('d-reports')" id="dnav-d-reports"><span class="nav-icon">📋</span> Public Reports <span class="nav-badge red" id="newReportsBadge">2</span></div>
+      <div class="nav-item" onclick="dShowSec('d-add')" id="dnav-d-add"><span class="nav-icon">＋</span> Add Case</div>
+      <div class="nav-item" onclick="dShowSec('d-match')" id="dnav-d-match"><span class="nav-icon">◎</span> Face Match</div>
+      <div class="nav-item" onclick="dShowSec('d-map')" id="dnav-d-map"><span class="nav-icon">◈</span> Map View</div>
+      <div class="nav-label" style="margin-top:6px">Management</div>
+      <div class="nav-item" onclick="dShowSec('d-cases')" id="dnav-d-cases"><span class="nav-icon">🗂</span> All Cases</div>
+      <div class="nav-item" onclick="dShowSec('d-alerts')" id="dnav-d-alerts"><span class="nav-icon">◬</span> Alert Feed <span class="nav-badge">7</span></div>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="user-row">
+        <div class="avatar" id="dashAvatar">OF</div>
+        <div class="user-info">
+          <div class="user-name" id="dashUserName">Officer</div>
+          <div class="user-role" id="dashUserRole">POLICE // L2</div>
+        </div>
+        <button class="logout-btn" onclick="doLogout()">⏻</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+    <!-- Dashboard -->
+    <div id="d-dashboard" class="dsection active">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Command <span>Dashboard</span></div>
+          <div class="breadcrumb">// OVERVIEW // REAL-TIME</div>
+        </div>
+        <div class="timestamp" id="dashClock">--:--:--</div>
+      </div>
+      <div class="stat-grid">
+        <div class="stat-card"><div class="stat-icon">👤</div><div class="stat-value" id="st-total">0</div><div class="stat-label">TOTAL RECORDS</div><div class="stat-delta">+12 today</div></div>
+        <div class="stat-card red"><div class="stat-icon">🔴</div><div class="stat-value" id="st-missing">0</div><div class="stat-label">STILL MISSING</div></div>
+        <div class="stat-card green"><div class="stat-icon">✅</div><div class="stat-value" id="st-found">0</div><div class="stat-label">RECOVERED</div><div class="stat-delta">+3 this week</div></div>
+        <div class="stat-card blue"><div class="stat-icon">📋</div><div class="stat-value" id="st-newreports">0</div><div class="stat-label">NEW REPORTS</div><div class="stat-delta" style="color:var(--blue);background:rgba(59,130,246,.1);border-color:rgba(59,130,246,.2)">PENDING</div></div>
+        <div class="stat-card teal"><div class="stat-icon">⚡</div><div class="stat-value">98.4<span style="font-size:14px">%</span></div><div class="stat-label">AI ACCURACY</div></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 320px;gap:18px">
+        <div class="panel">
+          <div class="panel-title">Recent Activity</div>
+          <div id="actFeed"></div>
+        </div>
+        <div>
+          <div class="panel">
+            <div class="panel-title">Cases This Week</div>
+            <div class="mini-chart" id="weekChart"></div>
+            <div style="display:flex;justify-content:space-between;margin-top:5px">
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--text-dim)" v-for="d in ['M','T','W','T','F','S','S']">M</span>
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--text-dim)">T</span>
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--text-dim)">W</span>
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--text-dim)">T</span>
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--text-dim)">F</span>
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--text-dim)">S</span>
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--text-dim)">S</span>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-title">Age Groups</div>
+            <div id="ageGroups"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Public Reports -->
+    <div id="d-reports" class="dsection">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Public <span>Reports</span></div>
+          <div class="breadcrumb">// SUBMITTED BY CITIZENS</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="search-bar-wrap">
+          <input class="search-input" id="rep-search" placeholder="Search by name, location…" oninput="filterReports()">
+          <select class="dash-select" id="rep-status-filter" onchange="filterReports()" style="width:160px;flex-shrink:0">
+            <option value="">All</option><option>Pending Review</option><option>Investigating</option><option>Found</option>
+          </select>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="data-table">
+            <thead><tr><th>Case ID</th><th>Name</th><th>Age/Gender</th><th>Location</th><th>Reported</th><th>Reporter</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody id="reportsTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add Case -->
+    <div id="d-add" class="dsection">
+      <div class="page-header">
+        <div>
+          <div class="page-title">ADD <span>Case</span></div>
+          <div class="breadcrumb">// REGISTER MISSING PERSON</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
+        <div class="panel">
+          <div class="panel-title">Personal Details</div>
+          <div class="dash-form-grid">
+            <div class="dash-fgroup"><label class="dash-flabel">Full Name</label><input class="dash-input" id="d-name" placeholder="Full name"></div>
+            <div class="dash-fgroup"><label class="dash-flabel">Age</label><input class="dash-input" id="d-age" type="number" placeholder="Age"></div>
+            <div class="dash-fgroup"><label class="dash-flabel">Gender</label><select class="dash-select" id="d-gender"><option value="">Select</option><option>Male</option><option>Female</option><option>Other</option></select></div>
+            <div class="dash-fgroup"><label class="dash-flabel">Blood Group</label><select class="dash-select" id="d-blood"><option>Unknown</option><option>A+</option><option>A-</option><option>B+</option><option>B-</option><option>AB+</option><option>AB-</option><option>O+</option><option>O-</option></select></div>
+            <div class="dash-fgroup full"><label class="dash-flabel">Last Known Location</label><input class="dash-input" id="d-location" placeholder="Location"></div>
+            <div class="dash-fgroup"><label class="dash-flabel">Date Missing</label><input class="dash-input" id="d-date" type="date"></div>
+            <div class="dash-fgroup"><label class="dash-flabel">Priority</label><select class="dash-select" id="d-priority"><option>Normal</option><option>High</option><option>Critical</option></select></div>
+            <div class="dash-fgroup full"><label class="dash-flabel">Notes</label><textarea class="dash-input" id="d-notes" rows="3" placeholder="Any relevant notes…"></textarea></div>
+          </div>
+          <button class="btn-p full" onclick="dashAddCase()">⬆ ADD TO DATABASE</button>
+        </div>
+        <div class="panel">
+          <div class="panel-title">Upload Photo</div>
+          <div class="dash-upload-zone" id="dashUploadZone">
+            <input type="file" accept="image/*" onchange="dashPreview(event)">
+            <div style="font-size:40px;margin-bottom:10px">📷</div>
+            <div style="font-size:14px;color:var(--text)">Drop image or <span style="color:var(--amber)">browse</span></div>
+            <div style="font-size:12px;color:var(--text-dim);margin-top:4px">JPG, PNG — Max 10MB</div>
+          </div>
+          <div class="dash-preview-wrap" id="dashPreviewWrap">
+            <img id="dashPreviewImg" class="dash-preview-img" src="" alt="">
+          </div>
+          <div style="margin-top:20px">
+            <div class="panel-title">Quick Stats</div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--text-dim)">Total in system</span><span style="font-family:'IBM Plex Mono',monospace;color:var(--amber)" id="qs-total">249</span></div>
+              <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--text-dim)">Resolved this month</span><span style="font-family:'IBM Plex Mono',monospace;color:var(--green)">18</span></div>
+              <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--text-dim)">Pending review</span><span style="font-family:'IBM Plex Mono',monospace;color:var(--red)" id="qs-pending">2</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Face Match -->
+    <div id="d-match" class="dsection">
+      <div class="page-header">
+        <div>
+          <div class="page-title">AI FACE <span>Match</span></div>
+          <div class="breadcrumb">// BIOMETRIC IDENTIFICATION ENGINE</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
+        <div>
+          <div class="panel">
+            <div class="panel-title">Upload Query Image</div>
+            <div class="dash-upload-zone" id="matchUploadZone">
+              <input type="file" accept="image/*" onchange="matchPreview(event)">
+              <div style="font-size:40px;margin-bottom:10px">🔍</div>
+              <div style="font-size:14px;color:var(--text)">CCTV frames, photos, screenshots</div>
+              <div style="font-size:12px;color:var(--text-dim);margin-top:4px">Any image source accepted</div>
+            </div>
+            <div class="dash-preview-wrap" id="matchPreviewWrap">
+              <img id="matchPreviewImg" class="dash-preview-img" src="" alt="">
+            </div>
+            <button class="btn-danger full" style="margin-top:14px" onclick="runMatch()" id="matchBtn">◎ RUN AI FACE MATCH</button>
+          </div>
+          <div class="panel">
+            <div class="panel-title">Engine Info</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div style="background:rgba(255,255,255,.03);border:1px solid var(--panel-border);border-radius:8px;padding:12px;text-align:center">
+                <div style="font-family:'Orbitron',monospace;font-size:18px;color:var(--teal)">FaceNet</div>
+                <div style="font-size:11px;color:var(--text-dim);margin-top:4px">512-dim embeddings</div>
+              </div>
+              <div style="background:rgba(255,255,255,.03);border:1px solid var(--panel-border);border-radius:8px;padding:12px;text-align:center">
+                <div style="font-family:'Orbitron',monospace;font-size:18px;color:var(--amber)">MTCNN</div>
+                <div style="font-size:11px;color:var(--text-dim);margin-top:4px">Face detector</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="panel" id="matchHowItWorks">
+            <div class="panel-title">How It Works</div>
+            <div style="display:flex;flex-direction:column;gap:14px">
+              <div style="display:flex;gap:12px">
+                <div style="width:26px;height:26px;border-radius:6px;background:var(--amber-dim);border:1px solid rgba(245,158,11,.3);display:flex;align-items:center;justify-content:center;font-family:'Orbitron',monospace;font-size:10px;color:var(--amber);flex-shrink:0">01</div>
+                <div><div style="font-size:13px;font-weight:600;margin-bottom:2px">Face Detection</div><div style="font-size:12px;color:var(--text-dim)">MTCNN locates and crops the face from the uploaded image.</div></div>
+              </div>
+              <div style="display:flex;gap:12px">
+                <div style="width:26px;height:26px;border-radius:6px;background:var(--amber-dim);border:1px solid rgba(245,158,11,.3);display:flex;align-items:center;justify-content:center;font-family:'Orbitron',monospace;font-size:10px;color:var(--amber);flex-shrink:0">02</div>
+                <div><div style="font-size:13px;font-weight:600;margin-bottom:2px">Embedding Generation</div><div style="font-size:12px;color:var(--text-dim)">FaceNet encodes the face into a 512-dimensional vector.</div></div>
+              </div>
+              <div style="display:flex;gap:12px">
+                <div style="width:26px;height:26px;border-radius:6px;background:var(--amber-dim);border:1px solid rgba(245,158,11,.3);display:flex;align-items:center;justify-content:center;font-family:'Orbitron',monospace;font-size:10px;color:var(--amber);flex-shrink:0">03</div>
+                <div><div style="font-size:13px;font-weight:600;margin-bottom:2px">Cosine Similarity</div><div style="font-size:12px;color:var(--text-dim)">Vector compared against all registered records to find closest match.</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="panel match-result" id="matchResultPanel">
+            <div class="panel-title">Match Result</div>
+            <div style="display:flex;align-items:flex-end;gap:16px;margin-bottom:14px">
+              <div><div class="match-confidence" id="matchScoreDisplay">--</div><div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text-dim)">CONFIDENCE</div></div>
+              <div style="flex:1">
+                <div class="progress-bar-wrap"><div class="progress-bar" id="matchProgressBar"></div></div>
+                <div style="font-size:11px;color:var(--text-dim);font-family:'IBM Plex Mono',monospace;margin-top:4px" id="matchVerdict"></div>
+              </div>
+            </div>
+            <div class="match-profile-box" id="matchProfileBox"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Map -->
+    <div id="d-map" class="dsection">
+      <div class="page-header">
+        <div>
+          <div class="page-title">LOCATION <span>Tracking</span></div>
+          <div class="breadcrumb">// GEOSPATIAL DISTRIBUTION</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+        <button class="map-filter-btn active">All Cases</button>
+        <button class="map-filter-btn">Missing</button>
+        <button class="map-filter-btn">Recovered</button>
+        <button class="map-filter-btn">Investigating</button>
+      </div>
+      <div class="panel" style="padding:0;overflow:hidden"><div id="map"></div></div>
+    </div>
+
+    <!-- All Cases -->
+    <div id="d-cases" class="dsection">
+      <div class="page-header">
+        <div>
+          <div class="page-title">ALL <span>Cases</span></div>
+          <div class="breadcrumb">// COMPLETE CASE REGISTRY</div>
+        </div>
+        <button class="btn-p" onclick="openQuickModal()">＋ QUICK ADD</button>
+      </div>
+      <div class="panel">
+        <div class="search-bar-wrap">
+          <input class="search-input" id="caseSearch" placeholder="Search name, ID, location…" oninput="filterCases()">
+          <select class="dash-select" id="caseStatusFilter" onchange="filterCases()" style="width:160px;flex-shrink:0">
+            <option value="">All Status</option><option>Missing</option><option>Investigating</option><option>Found</option>
+          </select>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="data-table">
+            <thead><tr><th>Photo</th><th>Case ID</th><th>Name</th><th>Age/Gender</th><th>Last Location</th><th>Reported</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody id="casesTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Alerts -->
+    <div id="d-alerts" class="dsection">
+      <div class="page-header">
+        <div>
+          <div class="page-title">ALERT <span>Feed</span></div>
+          <div class="breadcrumb">// LIVE SYSTEM NOTIFICATIONS</div>
+        </div>
+      </div>
+      <div class="panel" id="alertsPanel"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Quick Add Modal -->
+<div class="modal-overlay" id="quickModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Quick Add Case</div>
+      <button class="modal-close" onclick="closeQuickModal()">✕</button>
+    </div>
+    <div class="dash-fgroup" style="margin-bottom:12px"><label class="dash-flabel">Full Name</label><input class="dash-input" id="qm-name" placeholder="Name"></div>
+    <div class="dash-fgroup" style="margin-bottom:12px"><label class="dash-flabel">Location</label><input class="dash-input" id="qm-loc" placeholder="Last known location"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px">
+      <div class="dash-fgroup"><label class="dash-flabel">Age</label><input class="dash-input" id="qm-age" type="number" placeholder="Age"></div>
+      <div class="dash-fgroup"><label class="dash-flabel">Status</label><select class="dash-select" id="qm-status"><option>Missing</option><option>Investigating</option><option>Found</option></select></div>
+    </div>
+    <div style="display:flex;gap:10px">
+      <button class="btn-sec" style="flex:1" onclick="closeQuickModal()">Cancel</button>
+      <button class="btn-p" style="flex:1;justify-content:center" onclick="quickAddCase()">Submit</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script>
+// ═══════════ DATA ═══════════
+const CREDS = { officer:'sentinel2026', admin:'admin123' };
+let currentUser = null;
+
+const mockCases = [
+  {id:'CASE-0041',name:'Rajesh Kumar',   age:34,gender:'Male',  location:'T. Nagar, Chennai',   date:'12 Apr 2026',status:'Missing',      avatar:'RK',color:'#ef4444'},
+  {id:'CASE-0039',name:'Priya Menon',    age:22,gender:'Female',location:'Vadapalani, Chennai', date:'10 Apr 2026',status:'Investigating', avatar:'PM',color:'#f59e0b'},
+  {id:'CASE-0037',name:'Arjun Sharma',   age:15,gender:'Male',  location:'Tambaram, Chennai',   date:'8 Apr 2026', status:'Found',         avatar:'AS',color:'#22c55e'},
+  {id:'CASE-0035',name:'Lakshmi Devi',   age:67,gender:'Female',location:'Mylapore, Chennai',   date:'5 Apr 2026', status:'Missing',       avatar:'LD',color:'#ef4444'},
+  {id:'CASE-0032',name:'Mohammed Irfan', age:28,gender:'Male',  location:'Perambur, Chennai',   date:'2 Apr 2026', status:'Investigating', avatar:'MI',color:'#f59e0b'},
+  {id:'CASE-0029',name:'Sunita Pillai',  age:41,gender:'Female',location:'Anna Nagar, Chennai', date:'28 Mar 2026',status:'Found',         avatar:'SP',color:'#22c55e'},
+  {id:'CASE-0027',name:'Karthik Nair',   age:19,gender:'Male',  location:'Velachery, Chennai',  date:'25 Mar 2026',status:'Missing',       avatar:'KN',color:'#ef4444'},
+];
+
+const publicReports = [
+  {id:'RPT-1201',name:'Murugan Selvam',  age:52,gender:'Male',  location:'Guindy, Chennai',     date:'Today 10:22',reporter:'Kavitha Selvam',status:'Pending Review'},
+  {id:'RPT-1200',name:'Deepa Krishnan',  age:31,gender:'Female',location:'Nungambakkam, Chennai',date:'Today 08:15',reporter:'Siva Krishnan',status:'Pending Review'},
+  {id:'RPT-1198',name:'Suresh Babu',     age:8, gender:'Male',  location:'Chromepet, Chennai',  date:'Yesterday',  reporter:'Radha Babu',  status:'Investigating'},
+  {id:'RPT-1195',name:'Anitha Rao',      age:44,gender:'Female',location:'Adyar, Chennai',      date:'18 Apr',     reporter:'Mohan Rao',   status:'Found'},
+];
+
+const mockAlerts = [
+  {type:'success',icon:'✅',title:'Match Found',body:'CCTV at Koyambedu — 96.3% match with Arjun Sharma (CASE-0037)',time:'Today 14:22'},
+  {type:'warning',icon:'⚠️',title:'High Similarity',body:'Street camera Guindy — 87.1% match for CASE-0032',time:'Today 11:05'},
+  {type:'error',  icon:'🔴',title:'New Report Filed',body:'Rajesh Kumar (34M) reported missing near T. Nagar',time:'Today 09:43'},
+  {type:'info',   icon:'📍',title:'Location Update',body:'Last GPS ping for Lakshmi Devi — Mylapore fish market',time:'Yesterday 20:17'},
+  {type:'warning',icon:'📡',title:'Camera Offline',body:'CCTV-17 at Tambaram Jn. went offline',time:'Yesterday 18:00'},
+  {type:'success',icon:'✅',title:'Record Added',body:'New record for Sunita Pillai added by Officer Prasad',time:'Yesterday 10:30'},
+  {type:'info',   icon:'ℹ️',title:'System Update',body:'Face recognition model updated to v3.1 — accuracy 98.4%',time:'2 days ago'},
+];
+
+const mockActivity = [
+  {text:'New report filed: Murugan Selvam',time:'10m ago',color:'#ef4444'},
+  {text:'Case CASE-0037 closed — Arjun Sharma found',time:'1h ago',color:'#22c55e'},
+  {text:'AI face match triggered on Zone-4 CCTV',time:'3h ago',color:'#f59e0b'},
+  {text:'Location ping updated for CASE-0035',time:'5h ago',color:'#06b6d4'},
+  {text:'High similarity alert: 94.2% — Case-0032',time:'8h ago',color:'#f59e0b'},
+];
+
+// ═══════════ PARTICLES ═══════════
+const canvas=document.getElementById('bgCanvas');
+const ctx=canvas.getContext('2d');
+let W=canvas.width=window.innerWidth,H=canvas.height=window.innerHeight;
+window.addEventListener('resize',()=>{W=canvas.width=window.innerWidth;H=canvas.height=window.innerHeight});
+const pts=Array.from({length:60},()=>({x:Math.random()*W,y:Math.random()*H,r:Math.random()*1.4+.3,dx:(Math.random()-.5)*.3,dy:(Math.random()-.5)*.3,o:Math.random()*.35+.08}));
+function animP(){ctx.clearRect(0,0,W,H);pts.forEach(p=>{ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fillStyle=`rgba(245,158,11,${p.o})`;ctx.fill();p.x+=p.dx;p.y+=p.dy;if(p.x<0||p.x>W)p.dx*=-1;if(p.y<0||p.y>H)p.dy*=-1});requestAnimationFrame(animP)}
+animP();
+
+// ═══════════ PAGE ROUTING ═══════════
+function showPage(id){
+  ['page-landing','page-public-report','page-confirm','page-police-login','page-police-dash'].forEach(p=>{
+    const el=document.getElementById(p);
+    el.style.display='none';
+    if(el.style.flexDirection!==undefined) el.style.display='none';
+  });
+  const t=document.getElementById(id);
+  t.style.display=['page-landing','page-public-report','page-confirm','page-police-login'].includes(id)?'flex':'block';
+  if(id==='page-police-dash') t.style.display='block';
+}
+function goLanding(){ resetPublicForm(); showPage('page-landing'); }
+function goPublicReport(){ showPage('page-public-report'); }
+function goPoliceLogin(){ showPage('page-police-login'); document.getElementById('loginUser').value=''; document.getElementById('loginPass').value=''; document.getElementById('loginError').classList.remove('show'); }
+function goConfirm(cn){ document.getElementById('caseNumDisplay').textContent=cn; showPage('page-confirm'); }
+
+// ═══════════ POLICE LOGIN ═══════════
+function togglePass(){const i=document.getElementById('loginPass');i.type=i.type==='password'?'text':'password'}
+function doLogin(){
+  const u=document.getElementById('loginUser').value.trim().toLowerCase();
+  const p=document.getElementById('loginPass').value;
+  const err=document.getElementById('loginError');
+  const btn=document.getElementById('loginBtn');
+  if(!CREDS[u]||CREDS[u]!==p){err.classList.add('show');document.getElementById('loginPass').value='';return}
+  err.classList.remove('show');
+  btn.innerHTML='<div class="spinner"></div>';
+  setTimeout(()=>{
+    btn.innerHTML='<span id="loginBtnText">AUTHENTICATE →</span>';
+    currentUser=u;
+    const isAdmin=u==='admin';
+    document.getElementById('dashAvatar').textContent=u.slice(0,2).toUpperCase();
+    document.getElementById('dashUserName').textContent=isAdmin?'Administrator':'Sr. Officer';
+    document.getElementById('dashUserRole').textContent=isAdmin?'ADMIN // L3':'POLICE // L2';
+    showPage('page-police-dash');
+    initDashboard();
+    showToastG('Welcome back, '+(isAdmin?'Administrator':'Officer')+'!','success','👋');
+  },1500);
+}
+function doLogout(){currentUser=null;goLanding();showToastG('Logged out successfully','info','🔒')}
+
+// ═══════════ PUBLIC REPORT WIZARD ═══════════
+let currentStep=1; let pubPhotoSet=false;
+function gotoStep(n){
+  document.getElementById('rstep'+currentStep).classList.remove('active');
+  for(let i=1;i<=5;i++){
+    const sc=document.getElementById('sc'+i); const sl=document.getElementById('sl'+i);
+    sc.classList.remove('active','done'); sl.classList.remove('active','done');
+    if(i<n){sc.classList.add('done');sc.textContent='✓';sl.classList.add('done')}
+    else if(i===n){sc.classList.add('active');sc.textContent='0'+i;sl.classList.add('active')}
+    else{sc.textContent='0'+i}
+    if(i<=4){const line=document.getElementById('sline'+i);line.classList.remove('done');if(i<n)line.classList.add('done')}
+  }
+  currentStep=n;
+  document.getElementById('rstep'+n).classList.add('active');
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function nextStep(from){
+  if(from===1){
+    const fn=document.getElementById('r-fname').value.trim();
+    const ln=document.getElementById('r-lname').value.trim();
+    const ag=document.getElementById('r-age').value;
+    const ge=document.getElementById('r-gender').value;
+    const lo=document.getElementById('r-location').value.trim();
+    const ls=document.getElementById('r-lastseen').value;
+    if(!fn||!ln||!ag||!ge||!lo||!ls){showToastG('Please fill in all required fields','error','⚠');return}
+  }
+  if(from===4){
+    const rn=document.getElementById('r-rname').value.trim();
+    const mo=document.getElementById('r-mobile').value.trim();
+    const re=document.getElementById('r-relation').value;
+    if(!rn||!mo||!re){showToastG('Please fill reporter name, mobile, and relationship','error','⚠');return}
+  }
+  if(from===5) return;
+  if(from===4){buildReview();gotoStep(5);return}
+  gotoStep(from+1);
+}
+function prevStep(from){if(from>1)gotoStep(from-1)}
+
+function pubPreview(e){
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=ev=>{
+    document.getElementById('pub-preview-img').src=ev.target.result;
+    document.getElementById('pub-preview-wrap').style.display='block';
+    document.getElementById('pub-upload-zone').style.display='none';
+    document.getElementById('pub-photo-actions').style.display='flex';
+    document.getElementById('pub-filename').textContent=f.name;
+    pubPhotoSet=true;
+  };
+  r.readAsDataURL(f);
+}
+function resetPubPhoto(){
+  document.getElementById('pub-preview-wrap').style.display='none';
+  document.getElementById('pub-upload-zone').style.display='block';
+  document.getElementById('pub-photo-actions').style.display='none';
+  pubPhotoSet=false;
+}
+
+function buildReview(){
+  const fields={
+    'First Name':document.getElementById('r-fname').value,
+    'Last Name':document.getElementById('r-lname').value,
+    'Age':document.getElementById('r-age').value,
+    'Gender':document.getElementById('r-gender').value,
+    'Blood Group':document.getElementById('r-blood').value||'Unknown',
+    'Last Location':document.getElementById('r-location').value,
+    'Date Last Seen':document.getElementById('r-lastseen').value,
+    'Time Last Seen':document.getElementById('r-lasttime').value||'Not specified',
+    'Height':document.getElementById('r-height').value||'Not specified',
+    'Clothing':document.getElementById('r-clothing').value||'Not specified',
+    'Reporter Name':document.getElementById('r-rname').value,
+    'Mobile':document.getElementById('r-mobile').value,
+    'Relationship':document.getElementById('r-relation').value,
+    'Email':document.getElementById('r-email').value||'Not provided',
+  };
+  document.getElementById('reviewContent').innerHTML=Object.entries(fields).map(([k,v])=>`
+    <div style="background:rgba(255,255,255,.03);border:1px solid var(--panel-border);border-radius:8px;padding:12px">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:1.5px;color:var(--text-dim);margin-bottom:4px;text-transform:uppercase">${k}</div>
+      <div style="font-size:13px;font-weight:500">${v||'—'}</div>
+    </div>
+  `).join('');
+}
+
+function submitReport(){
+  if(!document.getElementById('r-declare').checked){showToastG('Please accept the declaration','error','⚠');return}
+  const btn=document.getElementById('submitReportBtn');
+  btn.disabled=true; btn.innerHTML='<div class="spinner" style="border-color:rgba(0,0,0,.3);border-top-color:#000"></div> Submitting…';
+  const cn='CASE-'+String(Math.floor(Math.random()*9000)+1000);
+  const newRep={
+    id:cn.replace('CASE','RPT'),
+    name:document.getElementById('r-fname').value+' '+document.getElementById('r-lname').value,
+    age:document.getElementById('r-age').value,
+    gender:document.getElementById('r-gender').value,
+    location:document.getElementById('r-location').value,
+    date:'Today',
+    reporter:document.getElementById('r-rname').value,
+    status:'Pending Review'
+  };
+  publicReports.unshift(newRep);
+  document.getElementById('newReportsBadge').textContent=publicReports.filter(r=>r.status==='Pending Review').length;
+  setTimeout(()=>{btn.disabled=false;btn.innerHTML='🚨 SUBMIT REPORT';goConfirm(cn)},2200);
+}
+
+function resetPublicForm(){
+  currentStep=1;
+  gotoStep(1);
+  ['r-fname','r-lname','r-age','r-location','r-rname','r-mobile','r-height','r-clothing','r-marks','r-circumstances','r-email','r-address','r-station','r-altmobile'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=''});
+  ['r-gender','r-blood','r-relation','r-complexion'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=''});
+  resetPubPhoto();
+  const dc=document.getElementById('r-declare');if(dc)dc.checked=false;
+  const br=document.getElementById('submitReportBtn');if(br){br.disabled=false;br.innerHTML='🚨 SUBMIT REPORT'}
+}
+
+// ═══════════ DASHBOARD ═══════════
+let map; let mapInit=false;
+
+function initDashboard(){
+  animCount('st-total',247,1200);
+  animCount('st-missing',38,1200);
+  animCount('st-found',209,1200);
+  animCount('st-newreports',publicReports.filter(r=>r.status==='Pending Review').length,600);
+  renderActivity(); renderChart(); renderAgeGroups();
+  renderCasesTable(mockCases);
+  renderReportsTable(publicReports);
+  renderAlertsFeed();
+  startDashClock();
+}
+
+function animCount(id,target,dur){
+  const el=document.getElementById(id); if(!el) return;
+  let s=0; const step=target/dur*16;
+  const t=()=>{s=Math.min(s+step,target);el.textContent=Math.round(s);if(s<target)requestAnimationFrame(t)};
+  requestAnimationFrame(t);
+}
+
+function startDashClock(){
+  const tick=()=>{
+    const now=new Date();
+    const t=[now.getHours(),now.getMinutes(),now.getSeconds()].map(n=>String(n).padStart(2,'0')).join(':');
+    const el=document.getElementById('dashClock');
+    if(el) el.textContent=t+' IST';
+  };
+  tick(); setInterval(tick,1000);
+}
+
+function renderActivity(){
+  const f=document.getElementById('actFeed'); if(!f) return;
+  f.innerHTML=mockActivity.map(a=>`<div class="activity-item"><div class="activity-dot" style="background:${a.color}"></div><div class="activity-text">${a.text}</div><div class="activity-time">${a.time}</div></div>`).join('');
+}
+
+function renderChart(){
+  const w=document.getElementById('weekChart'); if(!w) return;
+  const data=[8,5,12,7,9,4,6]; const max=Math.max(...data);
+  w.innerHTML=data.map(v=>`<div class="chart-bar" style="height:${(v/max)*100}%"></div>`).join('');
+}
+
+function renderAgeGroups(){
+  const w=document.getElementById('ageGroups'); if(!w) return;
+  const groups=[{l:'Children (<18)',p:32,c:'var(--red)'},{l:'Adults (18–60)',p:51,c:'var(--amber)'},{l:'Elderly (>60)',p:17,c:'var(--teal)'}];
+  w.innerHTML=groups.map(g=>`
+    <div style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span style="font-size:12px">${g.l}</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:${g.c}">${g.p}%</span>
+      </div>
+      <div style="background:rgba(255,255,255,.06);border-radius:3px;height:5px;overflow:hidden">
+        <div class="anim-bar" data-w="${g.p}" style="background:${g.c}"></div>
+      </div>
+    </div>
+  `).join('');
+  setTimeout(()=>document.querySelectorAll('.anim-bar').forEach(b=>b.style.width=b.dataset.w+'%'),200);
+}
+
+function dShowSec(id){
+  document.querySelectorAll('.dsection').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  const nav=document.getElementById('dnav-'+id);
+  if(nav) nav.classList.add('active');
+  if(id==='d-map') setTimeout(initMap,200);
+}
+
+// ═══════════ CASES TABLE ═══════════
+function renderCasesTable(data){
+  const t=document.getElementById('casesTableBody'); if(!t) return;
+  t.innerHTML=data.map(p=>`
+    <tr>
+      <td><div style="width:40px;height:40px;border-radius:8px;background:${p.color}22;border:1px solid ${p.color}44;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:${p.color}">${p.avatar}</div></td>
+      <td><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-dim)">${p.id}</span></td>
+      <td><strong>${p.name}</strong></td>
+      <td style="color:var(--text-dim);font-size:13px">${p.age} / ${p.gender}</td>
+      <td style="font-size:13px">📍 ${p.location}</td>
+      <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-dim)">${p.date}</td>
+      <td>${badgeHTML(p.status)}</td>
+      <td>
+        <div style="display:flex;gap:6px">
+          <button onclick="updateStatus('${p.id}')" style="background:var(--panel);border:1px solid var(--panel-border);border-radius:5px;padding:4px 10px;color:var(--text);font-size:11px;cursor:pointer" onmouseover="this.style.borderColor='var(--amber)'" onmouseout="this.style.borderColor='var(--panel-border)'">Edit</button>
+          <button onclick="showToastG('Case ${p.id} details','info','📋')" style="background:var(--panel);border:1px solid var(--panel-border);border-radius:5px;padding:4px 10px;color:var(--text);font-size:11px;cursor:pointer" onmouseover="this.style.borderColor='var(--teal)'" onmouseout="this.style.borderColor='var(--panel-border)'">View</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+function filterCases(){
+  const q=document.getElementById('caseSearch').value.toLowerCase();
+  const st=document.getElementById('caseStatusFilter').value;
+  renderCasesTable(mockCases.filter(p=>(p.name.toLowerCase().includes(q)||p.id.toLowerCase().includes(q)||p.location.toLowerCase().includes(q))&&(!st||p.status===st)));
+}
+
+// ═══════════ REPORTS TABLE ═══════════
+function renderReportsTable(data){
+  const t=document.getElementById('reportsTable'); if(!t) return;
+  t.innerHTML=data.map(r=>`
+    <tr>
+      <td><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-dim)">${r.id}</span></td>
+      <td><strong>${r.name}</strong></td>
+      <td style="color:var(--text-dim);font-size:13px">${r.age||'?'} / ${r.gender||'?'}</td>
+      <td style="font-size:13px">📍 ${r.location}</td>
+      <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-dim)">${r.date}</td>
+      <td style="font-size:13px">${r.reporter}</td>
+      <td>${r.status==='Pending Review'?`<span class="badge badge-new">New</span>`:r.status==='Found'?`<span class="badge badge-found">Found</span>`:`<span class="badge badge-investigating">Reviewing</span>`}</td>
+      <td>
+        <div style="display:flex;gap:6px">
+          <button onclick="promoteReport('${r.id}')" style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:5px;padding:4px 10px;color:var(--amber);font-size:11px;cursor:pointer">Accept</button>
+          <button onclick="showToastG('Report dismissed','info','🗑')" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:5px;padding:4px 10px;color:var(--red);font-size:11px;cursor:pointer">Dismiss</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+function filterReports(){
+  const q=document.getElementById('rep-search').value.toLowerCase();
+  const st=document.getElementById('rep-status-filter').value;
+  renderReportsTable(publicReports.filter(r=>(r.name.toLowerCase().includes(q)||r.location.toLowerCase().includes(q))&&(!st||r.status===st)));
+}
+function promoteReport(id){
+  const r=publicReports.find(x=>x.id===id);
+  if(!r)return;
+  r.status='Investigating';
+  mockCases.unshift({
+    id:'CASE-'+String(Math.floor(Math.random()*9000)+1000),
+    name:r.name,age:r.age,gender:r.gender,
+    location:r.location,date:r.date,
+    status:'Investigating',
+    avatar:r.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase(),
+    color:'#f59e0b'
+  });
+  renderReportsTable(publicReports);
+  renderCasesTable(mockCases);
+  const pending=publicReports.filter(x=>x.status==='Pending Review').length;
+  document.getElementById('newReportsBadge').textContent=pending||'0';
+  document.getElementById('st-newreports').textContent=pending;
+  document.getElementById('qs-pending').textContent=pending;
+  showToastG('Report accepted and case created','success','✅');
+}
+function updateStatus(id){showToastG('Status editor for '+id,'info','✏️')}
+
+// ═══════════ ALERTS FEED ═══════════
+function renderAlertsFeed(){
+  const p=document.getElementById('alertsPanel'); if(!p) return;
+  const tc={success:'var(--green)',warning:'var(--amber)',error:'var(--red)',info:'var(--teal)'};
+  p.innerHTML='<div class="panel-title">Live Notifications</div>'+mockAlerts.map(a=>`
+    <div style="display:flex;gap:14px;padding:14px 0;border-bottom:1px solid rgba(255,255,255,.05);align-items:flex-start">
+      <div style="width:36px;height:36px;border-radius:9px;background:${tc[a.type]}18;border:1px solid ${tc[a.type]}33;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">${a.icon}</div>
+      <div style="flex:1"><div style="font-weight:600;font-size:13.5px;margin-bottom:3px">${a.title}</div><div style="font-size:12.5px;color:var(--text-dim)">${a.body}</div></div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text-dim);white-space:nowrap;padding-top:2px">${a.time}</div>
+    </div>
+  `).join('');
+}
+
+// ═══════════ ADD CASE (DASH) ═══════════
+function dashPreview(e){
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=ev=>{
+    document.getElementById('dashPreviewImg').src=ev.target.result;
+    document.getElementById('dashPreviewWrap').classList.add('vis');
+    document.getElementById('dashUploadZone').style.display='none';
+  };
+  r.readAsDataURL(f);
+}
+function dashAddCase(){
+  const name=document.getElementById('d-name').value.trim();
+  if(!name){showToastG('Please enter a name','error','⚠');return}
+  const btn=document.querySelector('#d-add .btn-p.full');
+  btn.disabled=true; btn.innerHTML='<div class="spinner"></div> Adding…';
+  const nc={
+    id:'CASE-'+String(Math.floor(Math.random()*9000)+1000),
+    name,
+    age:document.getElementById('d-age').value||'?',
+    gender:document.getElementById('d-gender').value||'?',
+    location:document.getElementById('d-location').value||'Unknown',
+    date:new Date().toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}),
+    status:'Missing',
+    avatar:name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase(),
+    color:'#ef4444'
+  };
+  mockCases.unshift(nc);
+  const total=parseInt(document.getElementById('st-total').textContent)+1;
+  const missing=parseInt(document.getElementById('st-missing').textContent)+1;
+  document.getElementById('st-total').textContent=total;
+  document.getElementById('st-missing').textContent=missing;
+  document.getElementById('qs-total').textContent=total;
+  setTimeout(()=>{
+    btn.disabled=false; btn.innerHTML='⬆ ADD TO DATABASE';
+    ['d-name','d-age','d-notes','d-location'].forEach(i=>document.getElementById(i).value='');
+    document.getElementById('d-gender').value='';
+    showToastG('Case for '+name+' added','success','✅');
+  },1800);
+}
+
+// ═══════════ FACE MATCH ═══════════
+function matchPreview(e){
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=ev=>{
+    document.getElementById('matchPreviewImg').src=ev.target.result;
+    document.getElementById('matchPreviewWrap').classList.add('vis');
+    document.getElementById('matchUploadZone').style.display='none';
+  };
+  r.readAsDataURL(f);
+}
+function runMatch(){
+  if(!document.getElementById('matchPreviewWrap').classList.contains('vis')){showToastG('Upload an image first','error','⚠');return}
+  const btn=document.getElementById('matchBtn');
+  btn.disabled=true; btn.innerHTML='<div class="spinner white"></div> ANALYZING BIOMETRICS…';
+  document.getElementById('matchHowItWorks').style.display='block';
+  document.getElementById('matchResultPanel').classList.remove('vis');
+  setTimeout(()=>{
+    btn.disabled=false; btn.innerHTML='◎ RUN AI FACE MATCH';
+    const score=(Math.random()*18+79).toFixed(1);
+    const p=mockCases[Math.floor(Math.random()*mockCases.length)];
+    document.getElementById('matchScoreDisplay').textContent=score+'%';
+    document.getElementById('matchProgressBar').style.width=score+'%';
+    const high=parseFloat(score)>88;
+    document.getElementById('matchVerdict').textContent=high?'▲ HIGH CONFIDENCE MATCH':'~ POSSIBLE MATCH — VERIFY MANUALLY';
+    document.getElementById('matchVerdict').style.color=high?'var(--green)':'var(--amber)';
+    document.getElementById('matchProfileBox').innerHTML=`
+      <div style="width:72px;height:72px;border-radius:10px;background:${p.color}22;border:2px solid ${p.color}66;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:22px;color:${p.color};flex-shrink:0">${p.avatar}</div>
+      <div>
+        <div style="font-size:15px;font-weight:700;margin-bottom:6px">${p.name}</div>
+        <div style="font-size:13px;color:var(--text-dim);margin-bottom:4px">Case: <strong style="color:var(--text)">${p.id}</strong></div>
+        <div style="font-size:13px;color:var(--text-dim);margin-bottom:4px">Age: <strong style="color:var(--text)">${p.age} / ${p.gender}</strong></div>
+        <div style="font-size:13px;color:var(--text-dim)">Last seen: <strong style="color:var(--text)">${p.location}</strong></div>
+      </div>
+    `;
+    document.getElementById('matchHowItWorks').style.display='none';
+    document.getElementById('matchResultPanel').classList.add('vis');
+    document.getElementById('matchResultPanel').style.display='block';
+    showToastG('Match complete — '+score+'% confidence','success','🎯');
+  },3000);
+}
+
+// ═══════════ MAP ═══════════
+function initMap(){
+  if(mapInit){map.invalidateSize();return}
+  mapInit=true;
+  map=L.map('map',{zoomControl:true}).setView([13.0827,80.2707],11);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{attribution:'© OpenStreetMap © CARTO'}).addTo(map);
+  const colors={Missing:'#ef4444',Found:'#22c55e',Investigating:'#f59e0b'};
+  [...mockCases,...publicReports.slice(0,3).map(r=>({...r,status:r.status==='Pending Review'?'Investigating':r.status}))].forEach(p=>{
+    const lat=13.0827+(Math.random()-.5)*.14;
+    const lng=80.2707+(Math.random()-.5)*.14;
+    const col=colors[p.status]||'#f59e0b';
+    const icon=L.divIcon({className:'',html:`<div style="width:13px;height:13px;border-radius:50%;background:${col};border:2px solid white;box-shadow:0 0 8px ${col}"></div>`,iconSize:[13,13],iconAnchor:[6,6]});
+    L.marker([lat,lng],{icon}).addTo(map).bindPopup(`<div style="font-family:'IBM Plex Mono',monospace;font-size:12px;background:#0a0f1e;padding:10px;border-radius:8px;color:#e2e8f0;min-width:150px"><strong style="font-family:'Orbitron',monospace;color:#f59e0b;font-size:11px">${p.id}</strong><br>👤 ${p.name}<br>📍 ${p.location}<br><span style="color:${col}">${p.status}</span></div>`);
+  });
+}
+
+// ═══════════ QUICK ADD MODAL ═══════════
+function openQuickModal(){document.getElementById('quickModal').classList.add('open')}
+function closeQuickModal(){document.getElementById('quickModal').classList.remove('open')}
+function quickAddCase(){
+  const name=document.getElementById('qm-name').value.trim();
+  const loc=document.getElementById('qm-loc').value.trim();
+  const age=document.getElementById('qm-age').value;
+  const status=document.getElementById('qm-status').value;
+  if(!name||!loc){showToastG('Fill name and location','error','⚠');return}
+  const nc={
+    id:'CASE-'+String(Math.floor(Math.random()*9000)+1000),
+    name,age:age||'?',gender:'?',location:loc,
+    date:new Date().toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}),
+    status,
+    avatar:name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase(),
+    color:status==='Missing'?'#ef4444':status==='Found'?'#22c55e':'#f59e0b'
+  };
+  mockCases.unshift(nc);
+  renderCasesTable(mockCases);
+  closeQuickModal();
+  ['qm-name','qm-loc','qm-age'].forEach(i=>document.getElementById(i).value='');
+  showToastG('Case for '+name+' created','success','✅');
+}
+
+// ═══════════ BADGE ═══════════
+function badgeHTML(s){
+  if(s==='Missing')return`<span class="badge badge-missing">Missing</span>`;
+  if(s==='Found')return`<span class="badge badge-found">Found</span>`;
+  return`<span class="badge badge-investigating">Investigating</span>`;
+}
+
+// ═══════════ TOAST ═══════════
+function showToastG(msg,type='info',icon='ℹ️'){
+  const c=document.getElementById('toastContainer');
+  const t=document.createElement('div');
+  t.className=`toast ${type}`;
+  t.innerHTML=`<span class="toast-icon">${icon}</span><span class="toast-msg">${msg}</span><button class="toast-close" onclick="this.parentElement.remove()">✕</button>`;
+  c.appendChild(t);
+  setTimeout(()=>{if(t.parentElement)t.remove()},4000);
+}
+
+// ═══════════ MAP FILTER BUTTONS ═══════════
+document.querySelectorAll('.map-filter-btn').forEach(btn=>{
+  btn.addEventListener('click',function(){
+    document.querySelectorAll('.map-filter-btn').forEach(b=>b.classList.remove('active'));
+    this.classList.add('active');
+  });
+});
+
+// ═══════════ INIT ═══════════
+showPage('page-landing');
+</script>
+</body>
+</html>
